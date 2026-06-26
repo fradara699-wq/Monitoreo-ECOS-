@@ -1,10 +1,33 @@
 import { Patient, User, UserRole, TherapyMode, AnticoagulationType, AccessSite, MonitorEntry, FilterType, ReplacementFluid, ReplacementSite, BalanceEntry } from '../types';
 
-// Helper to communicate with our Netlify function proxy
-async function fetchAirtable(method: string, type: 'patients' | 'users', id?: string, data?: any) {
-  let url = `/.netlify/functions/airtable?type=${type}`;
+// Local Users Database State
+const DEFAULT_USERS: (User & { password?: string })[] = [
+  { id: 'u1', username: 'admin', role: UserRole.ADMIN, name: 'Dr. Administrador', password: '1234' },
+  { id: 'u2', username: 'user', role: UserRole.USER, name: 'Lic. Enfermería', password: '1234' },
+  { id: 'u3', username: 'medico', role: UserRole.USER, name: 'Dr. Guardia', password: '1234' }
+];
+
+function getLocalUsers(): (User & { password?: string })[] {
+  const stored = localStorage.getItem('hpu_local_users');
+  if (stored) {
+    try {
+      return JSON.parse(stored);
+    } catch (e) {
+      // ignore
+    }
+  }
+  return DEFAULT_USERS;
+}
+
+function saveLocalUsers(users: (User & { password?: string })[]) {
+  localStorage.setItem('hpu_local_users', JSON.stringify(users));
+}
+
+// Helper to communicate with our Netlify function proxy (clinical records only)
+async function fetchAirtable(method: string, id?: string, data?: any) {
+  let url = `/.netlify/functions/airtable`;
   if (id && (method === 'GET' || method === 'DELETE')) {
-    url += `&id=${id}`;
+    url += `?id=${id}`;
   }
 
   const options: RequestInit = {
@@ -25,18 +48,6 @@ async function fetchAirtable(method: string, type: 'patients' | 'users', id?: st
   }
 
   return response.json();
-}
-
-// Map Airtable records to User object
-function mapAirtableRecordToUser(record: any): User & { password?: string } {
-  const fields = record.fields || {};
-  return {
-    id: fields.id || record.id,
-    username: fields.username || '',
-    role: (fields.role as UserRole) || UserRole.USER,
-    name: fields.name || '',
-    password: fields.password || '',
-  };
 }
 
 // Map Airtable records to Patient object
@@ -138,8 +149,7 @@ function mapPatientToAirtableFields(patient: Patient) {
 export const AuthService = {
   login: async (username: string, password?: string): Promise<User | null> => {
     try {
-      const records = await fetchAirtable('GET', 'users');
-      const users = records.map(mapAirtableRecordToUser);
+      const users = getLocalUsers();
       const user = users.find(u => u.username.toLowerCase() === username.toLowerCase());
       if (user && user.password === password) {
         const { password: _, ...safeUser } = user;
@@ -154,9 +164,9 @@ export const AuthService = {
 
   getUsers: async (): Promise<User[]> => {
     try {
-      const records = await fetchAirtable('GET', 'users');
-      return records.map((r: any) => {
-        const { password: _, ...safeUser } = mapAirtableRecordToUser(r);
+      const users = getLocalUsers();
+      return users.map((u: any) => {
+        const { password: _, ...safeUser } = u;
         return safeUser;
       });
     } catch (error) {
@@ -167,22 +177,14 @@ export const AuthService = {
 
   updateUser: async (id: string, name: string, password?: string): Promise<void> => {
     try {
-      const records = await fetchAirtable('GET', 'users');
-      const users = records.map(mapAirtableRecordToUser);
-      const user = users.find(u => u.id === id);
-      if (user) {
-        const fields: any = {
-          id: user.id,
-          username: user.username,
-          role: user.role,
-          name: name,
-        };
+      const users = getLocalUsers();
+      const userIndex = users.findIndex(u => u.id === id);
+      if (userIndex !== -1) {
+        users[userIndex].name = name;
         if (password && password.trim() !== '') {
-          fields.password = password;
-        } else {
-          fields.password = user.password;
+          users[userIndex].password = password;
         }
-        await fetchAirtable('POST', 'users', user.id, fields);
+        saveLocalUsers(users);
       }
     } catch (error) {
       console.error('Error in AuthService.updateUser:', error);
@@ -192,18 +194,11 @@ export const AuthService = {
 
   updateUserRole: async (id: string, role: UserRole): Promise<void> => {
     try {
-      const records = await fetchAirtable('GET', 'users');
-      const users = records.map(mapAirtableRecordToUser);
-      const user = users.find(u => u.id === id);
-      if (user) {
-        const fields = {
-          id: user.id,
-          username: user.username,
-          role: role,
-          name: user.name,
-          password: user.password
-        };
-        await fetchAirtable('POST', 'users', user.id, fields);
+      const users = getLocalUsers();
+      const userIndex = users.findIndex(u => u.id === id);
+      if (userIndex !== -1) {
+        users[userIndex].role = role;
+        saveLocalUsers(users);
       }
     } catch (error) {
       console.error('Error in AuthService.updateUserRole:', error);
@@ -215,7 +210,7 @@ export const AuthService = {
 export const DataService = {
   getPatients: async (): Promise<Patient[]> => {
     try {
-      const records = await fetchAirtable('GET', 'patients');
+      const records = await fetchAirtable('GET');
       return records.map(mapAirtableRecordToPatient);
     } catch (error) {
       console.error('Error in DataService.getPatients:', error);
@@ -246,7 +241,7 @@ export const DataService = {
   savePatient: async (patient: Patient): Promise<void> => {
     try {
       const fields = mapPatientToAirtableFields(patient);
-      await fetchAirtable('POST', 'patients', patient.id, fields);
+      await fetchAirtable('POST', patient.id, fields);
     } catch (error) {
       console.error('Error in DataService.savePatient:', error);
       throw error;

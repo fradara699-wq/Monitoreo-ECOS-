@@ -1,11 +1,5 @@
 import { Handler } from '@netlify/functions';
 
-// Interface mapping for Airtable
-interface AirtableRecord {
-  id?: string;
-  fields: Record<string, any>;
-}
-
 // Native fetch helper for Airtable API
 async function airtableRequest(
   method: string,
@@ -109,64 +103,9 @@ export const handler: Handler = async (event, context) => {
   try {
     const method = event.httpMethod;
     const query = event.queryStringParameters || {};
-    const type = query.type || 'patients'; // 'patients' or 'users'
-    
-    // Determine target table.
-    // For patients, always use AIRTABLE_TABLE.
-    // For users, we can use a separate table "usuarios" or fallback to AIRTABLE_TABLE.
-    let targetTable = mainTable;
-    let isUserTable = false;
-
-    if (type === 'users') {
-      targetTable = 'usuarios';
-      isUserTable = true;
-    }
-
-    // Helper to try Airtable query on a specific table, and fall back if needed.
-    const safeGetAllRecords = async () => {
-      try {
-        return await getAllAirtableRecords(baseId, targetTable, token);
-      } catch (err: any) {
-        // If users table is queried but fails, fall back to mainTable with a recordType filter
-        if (isUserTable) {
-          console.log(`Table 'usuarios' not found or error. Storing/reading users in main table: ${mainTable}`);
-          targetTable = mainTable;
-          // Filter by recordType = 'user'
-          return await getAllAirtableRecords(baseId, mainTable, token, "{recordType} = 'user'");
-        }
-        throw err;
-      }
-    };
 
     if (method === 'GET') {
-      const records = await safeGetAllRecords();
-      
-      // If we are listing users and none exist yet, seed them!
-      if (type === 'users' && records.length === 0) {
-        const defaultUsers = [
-          { id: 'u1', username: 'admin', role: 'ADMIN', name: 'Dr. Administrador', password: '1234', recordType: 'user' },
-          { id: 'u2', username: 'user', role: 'USER', name: 'Lic. Enfermería', password: '1234', recordType: 'user' },
-          { id: 'u3', username: 'medico', role: 'USER', name: 'Dr. Guardia', password: '1234', recordType: 'user' }
-        ];
-
-        // Seed them in Airtable
-        const createdUsers: any[] = [];
-        for (const user of defaultUsers) {
-          try {
-            const created = await airtableRequest('POST', baseId, targetTable, token, { fields: user });
-            createdUsers.push(created);
-          } catch (e) {
-            console.error('Error seeding user:', e);
-          }
-        }
-        
-        return {
-          statusCode: 200,
-          headers,
-          body: JSON.stringify(createdUsers),
-        };
-      }
-
+      const records = await getAllAirtableRecords(baseId, mainTable, token);
       return {
         statusCode: 200,
         headers,
@@ -181,30 +120,20 @@ export const handler: Handler = async (event, context) => {
       
       const payload = JSON.parse(event.body);
       const data = payload.data || {};
-      const customId = data.id;
-
-      if (type === 'users') {
-        targetTable = 'usuarios';
-        isUserTable = true;
-      }
+      const customId = payload.id || data.id;
 
       // Check if record with this customId already exists to do an update or create
       let existingRecord: any = null;
       try {
-        const records = await safeGetAllRecords();
+        const records = await getAllAirtableRecords(baseId, mainTable, token);
         existingRecord = records.find((r: any) => r.fields.id === customId);
       } catch (err) {
-        // Fallback checks already handled in safeGetAllRecords
-      }
-
-      // Ensure recordType is set appropriately when sharing table
-      if (targetTable === mainTable) {
-        data.recordType = type === 'users' ? 'user' : 'patient';
+        console.error('Error listing records for existence check:', err);
       }
 
       if (existingRecord) {
         // Update existing record
-        const responseData = await airtableRequest('PATCH', baseId, targetTable, token, { fields: data }, existingRecord.id);
+        const responseData = await airtableRequest('PATCH', baseId, mainTable, token, { fields: data }, existingRecord.id);
         return {
           statusCode: 200,
           headers,
@@ -212,7 +141,7 @@ export const handler: Handler = async (event, context) => {
         };
       } else {
         // Create new record
-        const responseData = await airtableRequest('POST', baseId, targetTable, token, { fields: data });
+        const responseData = await airtableRequest('POST', baseId, mainTable, token, { fields: data });
         return {
           statusCode: 200,
           headers,
@@ -230,24 +159,19 @@ export const handler: Handler = async (event, context) => {
       const data = payload.data || {};
       const customId = payload.id;
 
-      if (type === 'users') {
-        targetTable = 'usuarios';
-        isUserTable = true;
-      }
-
       // Find record to update
-      const records = await safeGetAllRecords();
+      const records = await getAllAirtableRecords(baseId, mainTable, token);
       const existingRecord = records.find((r: any) => r.fields.id === customId);
 
       if (!existingRecord) {
         return {
           statusCode: 404,
           headers,
-          body: JSON.stringify({ error: `No se encontró ningún registro con ID ${customId}` }),
+          body: JSON.stringify({ error: `No se encontró ningún registro clínico con ID ${customId}` }),
         };
       }
 
-      const responseData = await airtableRequest('PATCH', baseId, targetTable, token, { fields: data }, existingRecord.id);
+      const responseData = await airtableRequest('PATCH', baseId, mainTable, token, { fields: data }, existingRecord.id);
       return {
         statusCode: 200,
         headers,
@@ -261,27 +185,22 @@ export const handler: Handler = async (event, context) => {
         return { statusCode: 400, headers, body: JSON.stringify({ error: 'Falta el parámetro id' }) };
       }
 
-      if (type === 'users') {
-        targetTable = 'usuarios';
-        isUserTable = true;
-      }
-
-      const records = await safeGetAllRecords();
+      const records = await getAllAirtableRecords(baseId, mainTable, token);
       const existingRecord = records.find((r: any) => r.fields.id === customId);
 
       if (!existingRecord) {
         return {
           statusCode: 404,
           headers,
-          body: JSON.stringify({ error: `No se encontró ningún registro con ID ${customId}` }),
+          body: JSON.stringify({ error: `No se encontró ningún registro clínico con ID ${customId}` }),
         };
       }
 
-      await airtableRequest('DELETE', baseId, targetTable, token, undefined, existingRecord.id);
+      await airtableRequest('DELETE', baseId, mainTable, token, undefined, existingRecord.id);
       return {
         statusCode: 200,
         headers,
-        body: JSON.stringify({ success: true, message: 'Registro eliminado correctamente de Airtable' }),
+        body: JSON.stringify({ success: true, message: 'Registro clínico eliminado correctamente de Airtable' }),
       };
     }
 
