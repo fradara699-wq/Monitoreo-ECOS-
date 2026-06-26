@@ -1,0 +1,6 @@
+{
+  "name": "Remix: Monitoreo ECOS",
+  "description": "Plataforma de registro y monitoreo de terapias de soporte extracorpóreo (CRRT, PIRRT, PEX) para la UCI de adultos.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}
