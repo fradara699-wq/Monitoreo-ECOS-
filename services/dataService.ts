@@ -1,6 +1,29 @@
 import { Patient, User, UserRole, TherapyMode, AnticoagulationType, AccessSite, MonitorEntry, FilterType, ReplacementFluid, ReplacementSite, BalanceEntry } from '../types';
 
-// Helper to communicate with our Netlify function proxy (clinical records and users in the single AIRTABLE_TABLE)
+// Local Users Database State
+const DEFAULT_USERS: (User & { password?: string })[] = [
+  { id: 'u1', username: 'admin', role: UserRole.ADMIN, name: 'Dr. Administrador', password: '1234' },
+  { id: 'u2', username: 'user', role: UserRole.USER, name: 'Lic. Enfermería', password: '1234' },
+  { id: 'u3', username: 'medico', role: UserRole.USER, name: 'Dr. Guardia', password: '1234' }
+];
+
+function getLocalUsers(): (User & { password?: string })[] {
+  const stored = localStorage.getItem('hpu_local_users');
+  if (stored) {
+    try {
+      return JSON.parse(stored);
+    } catch (e) {
+      // ignore
+    }
+  }
+  return DEFAULT_USERS;
+}
+
+function saveLocalUsers(users: (User & { password?: string })[]) {
+  localStorage.setItem('hpu_local_users', JSON.stringify(users));
+}
+
+// Helper to communicate with our Netlify function proxy (clinical records only)
 async function fetchAirtable(method: string, id?: string, data?: any) {
   let url = `/.netlify/functions/airtable`;
   if (id && (method === 'GET' || method === 'DELETE')) {
@@ -25,18 +48,6 @@ async function fetchAirtable(method: string, id?: string, data?: any) {
   }
 
   return response.json();
-}
-
-// Map Airtable record to User object
-function mapAirtableRecordToUser(record: any): User & { password?: string } {
-  const fields = record.fields || {};
-  return {
-    id: fields.id || record.id,
-    username: fields.username || '',
-    role: (fields.role as UserRole) || UserRole.USER,
-    name: fields.name || '',
-    password: fields.password || '',
-  };
 }
 
 // Map Airtable records to Patient object
@@ -131,47 +142,14 @@ function mapPatientToAirtableFields(patient: Patient) {
     prescription: JSON.stringify(patient.prescription || {}),
     prescriptionHistory: JSON.stringify(patient.prescriptionHistory || []),
     monitoringLog: JSON.stringify(patient.monitoringLog || []),
-    balanceLog: JSON.stringify(patient.balanceLog || []),
-    recordType: 'patient'
+    balanceLog: JSON.stringify(patient.balanceLog || [])
   };
-}
-
-// Fetch helper that also seeds default users if none exist in the single Airtable table
-async function getAndInitializeRecords() {
-  const records = await fetchAirtable('GET');
-  const userRecords = records.filter((r: any) => r.fields && r.fields.username);
-  
-  if (userRecords.length === 0) {
-    console.log("No users found in Airtable. Seeding default users...");
-    const DEFAULT_USERS = [
-      { id: 'u1', username: 'admin', role: UserRole.ADMIN, name: 'Dr. Administrador', password: '1234', recordType: 'user' },
-      { id: 'u2', username: 'user', role: UserRole.USER, name: 'Lic. Enfermería', password: '1234', recordType: 'user' },
-      { id: 'u3', username: 'medico', role: UserRole.USER, name: 'Dr. Guardia', password: '1234', recordType: 'user' }
-    ];
-
-    for (const u of DEFAULT_USERS) {
-      try {
-        await fetchAirtable('POST', u.id, u);
-      } catch (e) {
-        console.error("Error seeding default user to Airtable:", e);
-      }
-    }
-
-    // Refetch after seeding
-    return await fetchAirtable('GET');
-  }
-
-  return records;
 }
 
 export const AuthService = {
   login: async (username: string, password?: string): Promise<User | null> => {
     try {
-      const records = await getAndInitializeRecords();
-      const users = records
-        .filter((r: any) => r.fields && r.fields.username)
-        .map(mapAirtableRecordToUser);
-        
+      const users = getLocalUsers();
       const user = users.find(u => u.username.toLowerCase() === username.toLowerCase());
       if (user && user.password === password) {
         const { password: _, ...safeUser } = user;
@@ -186,13 +164,11 @@ export const AuthService = {
 
   getUsers: async (): Promise<User[]> => {
     try {
-      const records = await getAndInitializeRecords();
-      return records
-        .filter((r: any) => r.fields && r.fields.username)
-        .map((r: any) => {
-          const { password: _, ...safeUser } = mapAirtableRecordToUser(r);
-          return safeUser;
-        });
+      const users = getLocalUsers();
+      return users.map((u: any) => {
+        const { password: _, ...safeUser } = u;
+        return safeUser;
+      });
     } catch (error) {
       console.error('Error in AuthService.getUsers:', error);
       throw error;
@@ -201,19 +177,14 @@ export const AuthService = {
 
   updateUser: async (id: string, name: string, password?: string): Promise<void> => {
     try {
-      const records = await getAndInitializeRecords();
-      const userRecord = records.find((r: any) => r.fields && r.fields.username && (r.fields.id === id || r.id === id));
-      if (userRecord) {
-        const fields = {
-          ...userRecord.fields,
-          name: name,
-        };
+      const users = getLocalUsers();
+      const userIndex = users.findIndex(u => u.id === id);
+      if (userIndex !== -1) {
+        users[userIndex].name = name;
         if (password && password.trim() !== '') {
-          fields.password = password;
+          users[userIndex].password = password;
         }
-        await fetchAirtable('POST', fields.id, fields);
-      } else {
-        throw new Error(`Usuario con ID ${id} no encontrado para actualizar.`);
+        saveLocalUsers(users);
       }
     } catch (error) {
       console.error('Error in AuthService.updateUser:', error);
@@ -223,16 +194,11 @@ export const AuthService = {
 
   updateUserRole: async (id: string, role: UserRole): Promise<void> => {
     try {
-      const records = await getAndInitializeRecords();
-      const userRecord = records.find((r: any) => r.fields && r.fields.username && (r.fields.id === id || r.id === id));
-      if (userRecord) {
-        const fields = {
-          ...userRecord.fields,
-          role: role,
-        };
-        await fetchAirtable('POST', fields.id, fields);
-      } else {
-        throw new Error(`Usuario con ID ${id} no encontrado para actualizar rol.`);
+      const users = getLocalUsers();
+      const userIndex = users.findIndex(u => u.id === id);
+      if (userIndex !== -1) {
+        users[userIndex].role = role;
+        saveLocalUsers(users);
       }
     } catch (error) {
       console.error('Error in AuthService.updateUserRole:', error);
@@ -244,11 +210,8 @@ export const AuthService = {
 export const DataService = {
   getPatients: async (): Promise<Patient[]> => {
     try {
-      const records = await getAndInitializeRecords();
-      // Filter out user records (which have a username)
-      return records
-        .filter((r: any) => r.fields && !r.fields.username)
-        .map(mapAirtableRecordToPatient);
+      const records = await fetchAirtable('GET');
+      return records.map(mapAirtableRecordToPatient);
     } catch (error) {
       console.error('Error in DataService.getPatients:', error);
       throw error;
