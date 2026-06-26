@@ -35,7 +35,7 @@ async function airtableRequest(
 }
 
 // Fetch all records with pagination support
-async function getAllAirtableRecords(baseId: string, tableName: string, token: string, filterByFormula?: string) {
+async function getAllAirtableRecords(baseId: string, tableName: string, token: string) {
   let records: any[] = [];
   let offset = '';
   
@@ -45,9 +45,6 @@ async function getAllAirtableRecords(baseId: string, tableName: string, token: s
     
     if (offset) {
       params.push(`offset=${offset}`);
-    }
-    if (filterByFormula) {
-      params.push(`filterByFormula=${encodeURIComponent(filterByFormula)}`);
     }
     
     if (params.length > 0) {
@@ -76,7 +73,7 @@ async function getAllAirtableRecords(baseId: string, tableName: string, token: s
 export const handler: Handler = async (event, context) => {
   const token = process.env.AIRTABLE_TOKEN;
   const baseId = process.env.AIRTABLE_BASE_ID;
-  const mainTable = process.env.AIRTABLE_TABLE || 'sesión de soporte extracorpóreo';
+  const mainTable = process.env.AIRTABLE_TABLE;
 
   // Enable CORS
   const headers = {
@@ -90,12 +87,23 @@ export const handler: Handler = async (event, context) => {
     return { statusCode: 200, headers, body: '' };
   }
 
-  if (!token || !baseId) {
+  // Temporary logs for debugging (never print the token itself)
+  console.log("BASE:", baseId);
+  console.log("TABLE:", mainTable);
+  console.log("TOKEN:", token ? "OK" : "MISSING");
+
+  // Validate presence of all three Airtable environment variables
+  if (!token || !baseId || !mainTable) {
+    const missing: string[] = [];
+    if (!token) missing.push('AIRTABLE_TOKEN');
+    if (!baseId) missing.push('AIRTABLE_BASE_ID');
+    if (!mainTable) missing.push('AIRTABLE_TABLE');
+    
     return {
       statusCode: 500,
       headers,
       body: JSON.stringify({
-        error: 'Falta configurar las variables de entorno AIRTABLE_TOKEN o AIRTABLE_BASE_ID en Netlify.',
+        error: `Faltan las siguientes variables de entorno de Airtable: ${missing.join(', ')}`,
       }),
     };
   }
@@ -167,7 +175,7 @@ export const handler: Handler = async (event, context) => {
         return {
           statusCode: 404,
           headers,
-          body: JSON.stringify({ error: `No se encontró ningún registro clínico con ID ${customId}` }),
+          body: JSON.stringify({ error: `No se encontró ningún registro con ID ${customId}` }),
         };
       }
 
@@ -192,7 +200,7 @@ export const handler: Handler = async (event, context) => {
         return {
           statusCode: 404,
           headers,
-          body: JSON.stringify({ error: `No se encontró ningún registro clínico con ID ${customId}` }),
+          body: JSON.stringify({ error: `No se encontró ningún registro con ID ${customId}` }),
         };
       }
 
@@ -200,7 +208,7 @@ export const handler: Handler = async (event, context) => {
       return {
         statusCode: 200,
         headers,
-        body: JSON.stringify({ success: true, message: 'Registro clínico eliminado correctamente de Airtable' }),
+        body: JSON.stringify({ success: true, message: 'Registro eliminado correctamente de Airtable' }),
       };
     }
 

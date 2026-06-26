@@ -14,14 +14,25 @@ const PatientList: React.FC<PatientListProps> = ({ user, onSelectPatient, onNewP
   const [patients, setPatients] = useState<Patient[]>([]);
   const [filter, setFilter] = useState('');
   const [showActiveOnly, setShowActiveOnly] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     loadPatients();
   }, []);
 
   const loadPatients = async () => {
-    const data = await DataService.getPatients();
-    setPatients(data);
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await DataService.getPatients();
+      setPatients(data);
+    } catch (err: any) {
+      console.error(err);
+      setError(err.message || 'Error al conectar con Airtable');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const filteredPatients = patients.filter(p => {
@@ -32,6 +43,23 @@ const PatientList: React.FC<PatientListProps> = ({ user, onSelectPatient, onNewP
 
   return (
     <div className="p-4 md:p-6 space-y-6">
+      {error && (
+        <div className="p-4 bg-red-900/30 border border-red-500/50 rounded-lg text-red-200 text-sm flex flex-col md:flex-row justify-between items-center gap-3">
+          <span>⚠️ <strong>Error de Conexión:</strong> {error}</span>
+          <button 
+            onClick={loadPatients}
+            className="px-3 py-1 bg-red-700 hover:bg-red-600 rounded text-xs font-semibold transition"
+          >
+            Reintentar
+          </button>
+        </div>
+      )}
+
+      {loading && (
+        <div className="text-center text-blue-300 py-6 animate-pulse">
+          Cargando registros desde Airtable...
+        </div>
+      )}
       <div className="flex flex-col md:flex-row justify-between items-center gap-4">
         <h2 className="text-2xl font-bold text-white flex items-center gap-2">
           <Activity className="text-blue-400" /> Pacientes
