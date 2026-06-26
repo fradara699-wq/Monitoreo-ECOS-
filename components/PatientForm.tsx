@@ -323,12 +323,18 @@ const PatientForm: React.FC<PatientFormProps> = ({ user, patient, onBack }) => {
       }
     }
     
-    await DataService.savePatient(updatedFormData);
-    setFormData(updatedFormData);
-    setIsSubmitting(false);
-    setShowConfirmDialog(false);
-    alert('Datos guardados correctamente');
-    if (!patient) onBack();
+    try {
+      await DataService.savePatient(updatedFormData);
+      setFormData(updatedFormData);
+      setIsSubmitting(false);
+      setShowConfirmDialog(false);
+      alert('Datos guardados correctamente');
+      if (!patient) onBack();
+    } catch (error: any) {
+      setIsSubmitting(false);
+      console.error(error);
+      alert('Error al guardar datos en Airtable: ' + (error.message || error));
+    }
   };
 
   const addMonitorEntry = async () => {
@@ -358,18 +364,24 @@ const PatientForm: React.FC<PatientFormProps> = ({ user, patient, onBack }) => {
       complications: monitorForm.complications,
       nursingNotes: monitorForm.nursingNotes
     };
-    await DataService.addMonitorEntry(formData.id, newEntry);
-    setFormData(prev => {
-      const exists = prev.monitoringLog.some(e => e.id === newEntry.id);
-      const newLog = exists ? [...prev.monitoringLog] : [newEntry, ...(prev.monitoringLog || [])];
-      return {
-        ...prev,
-        monitoringLog: newLog.sort((a, b) => b.timestamp - a.timestamp)
-      };
-    });
-    setMonitorForm({}); 
-    setMonitorTime(getCurrentTimeStr());
-    setIsSubmitting(false);
+    try {
+      await DataService.addMonitorEntry(formData.id, newEntry);
+      setFormData(prev => {
+        const exists = prev.monitoringLog.some(e => e.id === newEntry.id);
+        const newLog = exists ? [...prev.monitoringLog] : [newEntry, ...(prev.monitoringLog || [])];
+        return {
+          ...prev,
+          monitoringLog: newLog.sort((a, b) => b.timestamp - a.timestamp)
+        };
+      });
+      setMonitorForm({}); 
+      setMonitorTime(getCurrentTimeStr());
+      setIsSubmitting(false);
+    } catch (error: any) {
+      setIsSubmitting(false);
+      console.error(error);
+      alert('Error al agregar monitoreo en Airtable: ' + (error.message || error));
+    }
   };
 
   const addBalanceEntry = async () => {
@@ -389,18 +401,24 @@ const PatientForm: React.FC<PatientFormProps> = ({ user, patient, onBack }) => {
       totalEgresos,
       balance
     };
-    await DataService.addBalanceEntry(formData.id, newEntry);
-    setFormData(prev => {
-      const exists = (prev.balanceLog || []).some(e => e.id === newEntry.id);
-      const newLog = exists ? [...(prev.balanceLog || [])] : [newEntry, ...(prev.balanceLog || [])];
-      return {
-        ...prev,
-        balanceLog: newLog.sort((a, b) => b.timestamp - a.timestamp)
-      };
-    });
-    setBalanceForm({});
-    setBalanceTime(getCurrentTimeStr());
-    setIsSubmitting(false);
+    try {
+      await DataService.addBalanceEntry(formData.id, newEntry);
+      setFormData(prev => {
+        const exists = (prev.balanceLog || []).some(e => e.id === newEntry.id);
+        const newLog = exists ? [...(prev.balanceLog || [])] : [newEntry, ...(prev.balanceLog || [])];
+        return {
+          ...prev,
+          balanceLog: newLog.sort((a, b) => b.timestamp - a.timestamp)
+        };
+      });
+      setBalanceForm({});
+      setBalanceTime(getCurrentTimeStr());
+      setIsSubmitting(false);
+    } catch (error: any) {
+      setIsSubmitting(false);
+      console.error(error);
+      alert('Error al agregar balance en Airtable: ' + (error.message || error));
+    }
   };
 
   const stats = getBalanceStats();

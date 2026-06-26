@@ -1,174 +1,287 @@
 import { Patient, User, UserRole, TherapyMode, AnticoagulationType, AccessSite, MonitorEntry, FilterType, ReplacementFluid, ReplacementSite, BalanceEntry } from '../types';
 
-interface InternalUser extends User {
-  password?: string;
+// Helper to communicate with our Netlify function proxy
+async function fetchAirtable(method: string, type: 'patients' | 'users', id?: string, data?: any) {
+  let url = `/.netlify/functions/airtable?type=${type}`;
+  if (id && (method === 'GET' || method === 'DELETE')) {
+    url += `&id=${id}`;
+  }
+
+  const options: RequestInit = {
+    method,
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  };
+
+  if (method !== 'GET' && method !== 'DELETE') {
+    options.body = JSON.stringify({ id, data });
+  }
+
+  const response = await fetch(url, options);
+  if (!response.ok) {
+    const errorBody = await response.json().catch(() => ({}));
+    throw new Error(errorBody.error || `Error al comunicarse con Airtable (HTTP ${response.status})`);
+  }
+
+  return response.json();
 }
 
-// Mock Users
-let MOCK_USERS: InternalUser[] = [
-  { id: '1', username: 'admin', role: UserRole.ADMIN, name: 'Dr. Administrador', password: '1234' },
-  { id: '2', username: 'user', role: UserRole.USER, name: 'Lic. Enfermería', password: '1234' },
-  { id: '3', username: 'medico', role: UserRole.USER, name: 'Dr. Guardia', password: '1234' }
-];
+// Map Airtable records to User object
+function mapAirtableRecordToUser(record: any): User & { password?: string } {
+  const fields = record.fields || {};
+  return {
+    id: fields.id || record.id,
+    username: fields.username || '',
+    role: (fields.role as UserRole) || UserRole.USER,
+    name: fields.name || '',
+    password: fields.password || '',
+  };
+}
 
-// Initial Mock Data
-let PATIENTS_DB: Patient[] = [
-  {
-    id: 'p1',
-    mrn: 'HC-123456',
-    fullName: 'Juan Perez',
-    dob: '1965-05-20',
-    admissionDate: '2023-10-01',
-    weight: 85,
-    diagnosis: 'Shock Séptico / AKI KDIGO 3',
-    accessDate: '2023-10-02',
-    isActive: true,
-    prescription: {
-      mode: TherapyMode.CVVHDF,
-      startDate: '2023-10-02T14:30',
-      accessSite: AccessSite.JUGULAR_RIGHT,
-      filterType: FilterType.F17,
-      replacementFluid: ReplacementFluid.RIVERO_K25,
-      replacementSite: ReplacementSite.POST,
-      totalDose: 25,
-      dialysatePercent: 50,
-      replacementPercent: 50,
-      bloodFlow: 150,
-      dialysateFlow: 1062, // approx 25 * 85 * 0.5
-      replacementFlow: 1062,
-      prePostRatio: '50/50',
-      fluidRemovalGoal: 100,
-      anticoagulation: AnticoagulationType.CITRATE,
-      citrateDose: 270, // 150 * 1.8
-      // calciumReturn removed
-      hemoadsorption: true
-    },
-    prescriptionHistory: [],
-    monitoringLog: [
-      {
-        id: 'm1',
-        timestamp: Date.now() - 3600000,
-        accessPressure: -80,
-        returnPressure: 60,
-        effluentPressure: 20,
-        tmp: 130,
-        pressureDrop: 40,
-        filtrationFraction: 22,
-        ionizedCalciumSystemic: 1.12,
-        ionizedCalciumCircuit: 0.35,
-        nursingNotes: 'Inicio sin complicaciones.'
-      }
-    ],
-    balanceLog: []
-  },
-  {
-    id: 'p2',
-    mrn: 'HC-999888',
-    fullName: 'Maria Gonzalez',
-    dob: '1980-02-15',
-    admissionDate: '2023-09-20',
-    weight: 60,
-    diagnosis: 'Falla Hepática Fulminante',
-    accessDate: '2023-09-25',
-    isActive: false,
-    prescription: {
-      mode: TherapyMode.MARS,
-      startDate: '2023-09-25T08:00',
-      accessSite: AccessSite.FEMORAL_RIGHT,
-      filterType: FilterType.F14,
-      replacementFluid: ReplacementFluid.SF_1000,
-      replacementSite: ReplacementSite.POST,
-      totalDose: 20,
-      dialysatePercent: 0,
-      replacementPercent: 100,
-      bloodFlow: 200,
-      fluidRemovalGoal: 0,
-      anticoagulation: AnticoagulationType.NONE,
-      hemoadsorption: false
-    },
-    prescriptionHistory: [],
-    monitoringLog: [],
-    balanceLog: []
+// Map Airtable records to Patient object
+function mapAirtableRecordToPatient(record: any): Patient {
+  const fields = record.fields || {};
+  
+  let prescription = {
+    mode: TherapyMode.CVVHDF,
+    accessSite: AccessSite.JUGULAR_RIGHT,
+    replacementSite: ReplacementSite.POST,
+    bloodFlow: 150,
+    fluidRemovalGoal: 100,
+    anticoagulation: AnticoagulationType.NONE,
+  };
+
+  if (typeof fields.prescription === 'string') {
+    try {
+      prescription = JSON.parse(fields.prescription);
+    } catch (e) {
+      console.error('Error parsing prescription JSON from Airtable:', e);
+    }
+  } else if (fields.prescription && typeof fields.prescription === 'object') {
+    prescription = fields.prescription;
   }
-];
+  
+  let prescriptionHistory = [];
+  if (typeof fields.prescriptionHistory === 'string') {
+    try {
+      prescriptionHistory = JSON.parse(fields.prescriptionHistory);
+    } catch (e) {
+      console.error('Error parsing prescriptionHistory JSON from Airtable:', e);
+    }
+  } else if (Array.isArray(fields.prescriptionHistory)) {
+    prescriptionHistory = fields.prescriptionHistory;
+  }
+
+  let monitoringLog = [];
+  if (typeof fields.monitoringLog === 'string') {
+    try {
+      monitoringLog = JSON.parse(fields.monitoringLog);
+    } catch (e) {
+      console.error('Error parsing monitoringLog JSON from Airtable:', e);
+    }
+  } else if (Array.isArray(fields.monitoringLog)) {
+    monitoringLog = fields.monitoringLog;
+  }
+
+  let balanceLog = [];
+  if (typeof fields.balanceLog === 'string') {
+    try {
+      balanceLog = JSON.parse(fields.balanceLog);
+    } catch (e) {
+      console.error('Error parsing balanceLog JSON from Airtable:', e);
+    }
+  } else if (Array.isArray(fields.balanceLog)) {
+    balanceLog = fields.balanceLog;
+  }
+
+  return {
+    id: fields.id || record.id,
+    mrn: fields.mrn || '',
+    fullName: fields.fullName || '',
+    dob: fields.dob || '',
+    admissionDate: fields.admissionDate || '',
+    weight: Number(fields.weight) || 0,
+    diagnosis: fields.diagnosis || '',
+    accessDate: fields.accessDate || '',
+    isActive: fields.isActive === undefined ? true : !!fields.isActive,
+    endDate: fields.endDate || undefined,
+    terminationReason: fields.terminationReason || undefined,
+    prescription: prescription as any,
+    prescriptionHistory: prescriptionHistory,
+    monitoringLog: monitoringLog,
+    balanceLog: balanceLog,
+  };
+}
+
+// Map Patient to fields format for Airtable
+function mapPatientToAirtableFields(patient: Patient) {
+  return {
+    id: patient.id,
+    mrn: patient.mrn,
+    fullName: patient.fullName,
+    dob: patient.dob,
+    admissionDate: patient.admissionDate,
+    weight: Number(patient.weight) || 0,
+    diagnosis: patient.diagnosis,
+    accessDate: patient.accessDate,
+    isActive: !!patient.isActive,
+    endDate: patient.endDate || '',
+    terminationReason: patient.terminationReason || '',
+    prescription: JSON.stringify(patient.prescription || {}),
+    prescriptionHistory: JSON.stringify(patient.prescriptionHistory || []),
+    monitoringLog: JSON.stringify(patient.monitoringLog || []),
+    balanceLog: JSON.stringify(patient.balanceLog || [])
+  };
+}
 
 export const AuthService = {
-  login: (username: string, password: string): Promise<User | null> => {
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        const user = MOCK_USERS.find(u => u.username === username);
-        if (user && user.password === password) {
-          const { password, ...safeUser } = user;
-          resolve(safeUser);
-        } else {
-          resolve(null);
-        }
-      }, 500);
-    });
-  },
-
-  getUsers: (): Promise<User[]> => {
-    return Promise.resolve(MOCK_USERS.map(({ password, ...u }) => u));
-  },
-
-  updateUser: (id: string, name: string, password?: string): Promise<void> => {
-    const user = MOCK_USERS.find(u => u.id === id);
-    if (user) {
-      user.name = name;
-      if (password && password.trim() !== '') {
-        user.password = password;
+  login: async (username: string, password?: string): Promise<User | null> => {
+    try {
+      const records = await fetchAirtable('GET', 'users');
+      const users = records.map(mapAirtableRecordToUser);
+      const user = users.find(u => u.username.toLowerCase() === username.toLowerCase());
+      if (user && user.password === password) {
+        const { password: _, ...safeUser } = user;
+        return safeUser;
       }
+      return null;
+    } catch (error) {
+      console.error('Error in AuthService.login:', error);
+      throw error;
     }
-    return Promise.resolve();
   },
 
-  updateUserRole: (id: string, role: UserRole): Promise<void> => {
-    const user = MOCK_USERS.find(u => u.id === id);
-    if (user) {
-      user.role = role;
+  getUsers: async (): Promise<User[]> => {
+    try {
+      const records = await fetchAirtable('GET', 'users');
+      return records.map((r: any) => {
+        const { password: _, ...safeUser } = mapAirtableRecordToUser(r);
+        return safeUser;
+      });
+    } catch (error) {
+      console.error('Error in AuthService.getUsers:', error);
+      throw error;
     }
-    return Promise.resolve();
+  },
+
+  updateUser: async (id: string, name: string, password?: string): Promise<void> => {
+    try {
+      const records = await fetchAirtable('GET', 'users');
+      const users = records.map(mapAirtableRecordToUser);
+      const user = users.find(u => u.id === id);
+      if (user) {
+        const fields: any = {
+          id: user.id,
+          username: user.username,
+          role: user.role,
+          name: name,
+        };
+        if (password && password.trim() !== '') {
+          fields.password = password;
+        } else {
+          fields.password = user.password;
+        }
+        await fetchAirtable('POST', 'users', user.id, fields);
+      }
+    } catch (error) {
+      console.error('Error in AuthService.updateUser:', error);
+      throw error;
+    }
+  },
+
+  updateUserRole: async (id: string, role: UserRole): Promise<void> => {
+    try {
+      const records = await fetchAirtable('GET', 'users');
+      const users = records.map(mapAirtableRecordToUser);
+      const user = users.find(u => u.id === id);
+      if (user) {
+        const fields = {
+          id: user.id,
+          username: user.username,
+          role: role,
+          name: user.name,
+          password: user.password
+        };
+        await fetchAirtable('POST', 'users', user.id, fields);
+      }
+    } catch (error) {
+      console.error('Error in AuthService.updateUserRole:', error);
+      throw error;
+    }
   }
 };
 
 export const DataService = {
-  getPatients: (): Promise<Patient[]> => {
-    return Promise.resolve([...PATIENTS_DB]);
+  getPatients: async (): Promise<Patient[]> => {
+    try {
+      const records = await fetchAirtable('GET', 'patients');
+      return records.map(mapAirtableRecordToPatient);
+    } catch (error) {
+      console.error('Error in DataService.getPatients:', error);
+      throw error;
+    }
   },
   
-  getActivePatients: (): Promise<Patient[]> => {
-    return Promise.resolve(PATIENTS_DB.filter(p => p.isActive));
-  },
-
-  getPatientById: (id: string): Promise<Patient | undefined> => {
-    return Promise.resolve(PATIENTS_DB.find(p => p.id === id));
-  },
-
-  savePatient: (patient: Patient): Promise<void> => {
-    const index = PATIENTS_DB.findIndex(p => p.id === patient.id);
-    if (index >= 0) {
-      PATIENTS_DB[index] = patient;
-    } else {
-      PATIENTS_DB.push(patient);
+  getActivePatients: async (): Promise<Patient[]> => {
+    try {
+      const patients = await DataService.getPatients();
+      return patients.filter(p => p.isActive);
+    } catch (error) {
+      console.error('Error in DataService.getActivePatients:', error);
+      throw error;
     }
-    return Promise.resolve();
   },
 
-  addMonitorEntry: (patientId: string, entry: MonitorEntry): Promise<void> => {
-    const patient = PATIENTS_DB.find(p => p.id === patientId);
-    if (patient) {
-      if (!patient.monitoringLog) patient.monitoringLog = [];
-      patient.monitoringLog.unshift(entry); // Add to top
+  getPatientById: async (id: string): Promise<Patient | undefined> => {
+    try {
+      const patients = await DataService.getPatients();
+      return patients.find(p => p.id === id);
+    } catch (error) {
+      console.error('Error in DataService.getPatientById:', error);
+      throw error;
     }
-    return Promise.resolve();
   },
 
-  addBalanceEntry: (patientId: string, entry: BalanceEntry): Promise<void> => {
-    const patient = PATIENTS_DB.find(p => p.id === patientId);
-    if (patient) {
-      if (!patient.balanceLog) patient.balanceLog = [];
-      patient.balanceLog.unshift(entry);
+  savePatient: async (patient: Patient): Promise<void> => {
+    try {
+      const fields = mapPatientToAirtableFields(patient);
+      await fetchAirtable('POST', 'patients', patient.id, fields);
+    } catch (error) {
+      console.error('Error in DataService.savePatient:', error);
+      throw error;
     }
-    return Promise.resolve();
+  },
+
+  addMonitorEntry: async (patientId: string, entry: MonitorEntry): Promise<void> => {
+    try {
+      const patient = await DataService.getPatientById(patientId);
+      if (patient) {
+        if (!patient.monitoringLog) patient.monitoringLog = [];
+        patient.monitoringLog.unshift(entry);
+        await DataService.savePatient(patient);
+      } else {
+        throw new Error(`Paciente no encontrado con ID ${patientId}`);
+      }
+    } catch (error) {
+      console.error('Error in DataService.addMonitorEntry:', error);
+      throw error;
+    }
+  },
+
+  addBalanceEntry: async (patientId: string, entry: BalanceEntry): Promise<void> => {
+    try {
+      const patient = await DataService.getPatientById(patientId);
+      if (patient) {
+        if (!patient.balanceLog) patient.balanceLog = [];
+        patient.balanceLog.unshift(entry);
+        await DataService.savePatient(patient);
+      } else {
+        throw new Error(`Paciente no encontrado con ID ${patientId}`);
+      }
+    } catch (error) {
+      console.error('Error in DataService.addBalanceEntry:', error);
+      throw error;
+    }
   }
 };

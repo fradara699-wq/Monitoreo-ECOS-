@@ -4,7 +4,7 @@ import PatientList from './components/PatientList';
 import PatientForm from './components/PatientForm';
 import { AuthService } from './services/dataService';
 import { User, Patient, UserRole } from './types';
-import { LogOut, ChevronDown, UserCog, Key, Shield, X, Save } from 'lucide-react';
+import { LogOut, ChevronDown, UserCog, Key, Shield, X, Save, Menu, Activity, UserPlus, Heart } from 'lucide-react';
 
 const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -13,9 +13,11 @@ const App: React.FC = () => {
   
   // User Menu State
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [isAdminModalOpen, setIsAdminModalOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const mobileMenuRef = useRef<HTMLDivElement>(null);
 
   // Profile Form State
   const [newName, setNewName] = useState('');
@@ -25,10 +27,13 @@ const App: React.FC = () => {
   const [usersList, setUsersList] = useState<User[]>([]);
 
   useEffect(() => {
-    // Close menu when clicking outside
+    // Close menus when clicking outside
     function handleClickOutside(event: MouseEvent) {
       if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
         setIsMenuOpen(false);
+      }
+      if (mobileMenuRef.current && !mobileMenuRef.current.contains(event.target as Node)) {
+        setIsMobileMenuOpen(false);
       }
     }
     document.addEventListener("mousedown", handleClickOutside);
@@ -104,63 +109,193 @@ const App: React.FC = () => {
   return (
     <div className="h-screen flex flex-col bg-hpu-900 text-hpu-100 font-sans">
       {/* Top Navigation */}
-      <nav className="bg-hpu-800 border-b border-hpu-600 px-4 py-3 flex justify-between items-center z-50">
-        <div className="flex items-center gap-3">
-          <div className="bg-blue-600 w-8 h-8 rounded-full flex items-center justify-center font-bold">HP</div>
-          <div>
-             <span className="font-bold hidden md:inline">Hospital Privado Universitario</span>
-             <span className="font-light text-blue-300 ml-2 text-sm">Soporte Extracorpóreo</span>
+      <nav className="bg-hpu-800 border-b border-hpu-600 px-4 py-3 flex justify-between items-center z-50 relative">
+        <div className="flex items-center gap-6">
+          <div className="flex items-center gap-3 cursor-pointer select-none" onClick={handleBackToList}>
+            <div className="bg-blue-600 w-8 h-8 rounded-full flex items-center justify-center font-bold text-white shrink-0 shadow-md">HP</div>
+            <div className="flex flex-col">
+               <span className="font-bold text-white leading-tight">Hospital Privado Universitario</span>
+               <span className="font-light text-blue-300 text-xs">Soporte Extracorpóreo</span>
+            </div>
+          </div>
+          
+          {/* Desktop Horizontal Navigation */}
+          <div className="hidden lg:flex items-center gap-1 border-l border-hpu-600 pl-4 ml-2">
+            <button
+              onClick={handleBackToList}
+              className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition ${
+                currentView === 'LIST'
+                  ? 'bg-blue-600/20 text-blue-400 border border-blue-500/30 font-semibold'
+                  : 'text-gray-300 hover:bg-hpu-700 hover:text-white'
+              }`}
+            >
+              <Activity size={16} /> Pacientes
+            </button>
+            <button
+              onClick={handleNewPatient}
+              className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition ${
+                currentView === 'FORM' && !selectedPatient
+                  ? 'bg-blue-600/20 text-blue-400 border border-blue-500/30 font-semibold'
+                  : 'text-gray-300 hover:bg-hpu-700 hover:text-white'
+              }`}
+            >
+              <UserPlus size={16} /> Nuevo Ingreso
+            </button>
+            {selectedPatient && currentView === 'FORM' && (
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-600/20 text-emerald-400 border border-emerald-500/30 ml-2 max-w-[200px] truncate" title={selectedPatient.fullName}>
+                <Heart size={14} className="animate-pulse text-emerald-500 shrink-0" /> {selectedPatient.fullName}
+              </div>
+            )}
           </div>
         </div>
-        
-        {/* User Menu */}
-        <div className="relative" ref={menuRef}>
-          <button 
-            onClick={() => setIsMenuOpen(!isMenuOpen)}
-            className="flex items-center gap-3 p-2 rounded-lg hover:bg-hpu-700 transition focus:outline-none"
-          >
-            <div className="text-right hidden sm:block">
-              <p className="text-sm font-medium">{currentUser.name}</p>
-              <p className="text-xs text-gray-400">{currentUser.role === 'ADMIN' ? 'Administrador' : 'Usuario'}</p>
-            </div>
-            <div className="bg-hpu-700 p-1 rounded-full">
-               <UserCog size={20} className="text-gray-300" />
-            </div>
-            <ChevronDown size={16} className={`text-gray-400 transition-transform ${isMenuOpen ? 'rotate-180' : ''}`} />
-          </button>
 
-          {isMenuOpen && (
-            <div className="absolute right-0 mt-2 w-56 bg-hpu-800 border border-hpu-600 rounded-lg shadow-xl py-1 z-50 animate-in fade-in zoom-in-95 duration-100">
-              <div className="px-4 py-2 border-b border-hpu-700 sm:hidden">
-                <p className="text-sm font-medium text-white">{currentUser.name}</p>
-                <p className="text-xs text-gray-400">{currentUser.role}</p>
+        {/* Right Actions */}
+        <div className="flex items-center gap-2">
+          {/* Desktop User Menu */}
+          <div className="hidden lg:block relative" ref={menuRef}>
+            <button 
+              onClick={() => setIsMenuOpen(!isMenuOpen)}
+              className="flex items-center gap-3 p-1.5 px-2.5 rounded-lg hover:bg-hpu-700 transition focus:outline-none select-none"
+            >
+              <div className="text-right">
+                <p className="text-sm font-medium leading-tight text-white">{currentUser.name}</p>
+                <p className="text-[10px] text-gray-400 uppercase tracking-wider">{currentUser.role === 'ADMIN' ? 'Administrador' : 'Usuario'}</p>
               </div>
-              
-              <button 
-                onClick={openProfileModal}
-                className="w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-hpu-700 hover:text-white flex items-center gap-2"
-              >
-                <Key size={16} /> Credenciales
-              </button>
+              <div className="bg-hpu-700 p-1.5 rounded-full">
+                 <UserCog size={18} className="text-gray-300" />
+              </div>
+              <ChevronDown size={14} className={`text-gray-400 transition-transform duration-200 ${isMenuOpen ? 'rotate-180' : ''}`} />
+            </button>
 
-              {currentUser.role === UserRole.ADMIN && (
+            {isMenuOpen && (
+              <div className="absolute right-0 mt-2 w-56 bg-hpu-800 border border-hpu-600 rounded-lg shadow-xl py-1 z-50 animate-in fade-in zoom-in-95 duration-100">
+                <div className="px-4 py-2 border-b border-hpu-700 lg:hidden">
+                  <p className="text-sm font-medium text-white">{currentUser.name}</p>
+                  <p className="text-xs text-gray-400">{currentUser.role}</p>
+                </div>
+                
                 <button 
-                  onClick={openAdminModal}
+                  onClick={openProfileModal}
                   className="w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-hpu-700 hover:text-white flex items-center gap-2"
                 >
-                  <Shield size={16} /> Gestionar Usuarios
+                  <Key size={16} className="text-blue-400" /> Credenciales
                 </button>
-              )}
-              
-              <div className="border-t border-hpu-700 mt-1"></div>
-              <button 
-                onClick={handleLogout}
-                className="w-full text-left px-4 py-2 text-sm text-red-400 hover:bg-hpu-700 hover:text-red-300 flex items-center gap-2"
-              >
-                <LogOut size={16} /> Cerrar Sesión
-              </button>
-            </div>
-          )}
+
+                {currentUser.role === UserRole.ADMIN && (
+                  <button 
+                    onClick={openAdminModal}
+                    className="w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-hpu-700 hover:text-white flex items-center gap-2"
+                  >
+                    <Shield size={16} className="text-yellow-500" /> Gestionar Usuarios
+                  </button>
+                )}
+                
+                <div className="border-t border-hpu-700 mt-1"></div>
+                <button 
+                  onClick={handleLogout}
+                  className="w-full text-left px-4 py-2 text-sm text-red-400 hover:bg-hpu-700 hover:text-red-300 flex items-center gap-2"
+                >
+                  <LogOut size={16} /> Cerrar Sesión
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Mobile Hamburger Trigger */}
+          <div className="lg:hidden flex items-center relative" ref={mobileMenuRef}>
+            <button
+              onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+              className="p-2 rounded-lg text-gray-400 hover:text-white hover:bg-hpu-700 transition focus:outline-none"
+              aria-label="Menú principal"
+            >
+              {isMobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
+            </button>
+
+            {/* Mobile Dropdown Menu */}
+            {isMobileMenuOpen && (
+              <div className="absolute right-0 top-12 w-64 bg-hpu-800 border border-hpu-600 rounded-lg shadow-xl py-3 z-50 animate-in fade-in slide-in-from-top-5 duration-200">
+                <div className="px-4 pb-2 border-b border-hpu-700 mb-2">
+                  <p className="text-sm font-bold text-white">{currentUser.name}</p>
+                  <p className="text-xs text-blue-400 font-medium">{currentUser.role === 'ADMIN' ? 'Administrador' : 'Usuario'}</p>
+                </div>
+
+                {/* Section links */}
+                <div className="px-2 space-y-1">
+                  <button 
+                    onClick={() => {
+                      handleBackToList();
+                      setIsMobileMenuOpen(false);
+                    }}
+                    className={`w-full text-left px-3 py-2 rounded-md text-sm font-medium flex items-center gap-2 ${
+                      currentView === 'LIST' 
+                        ? 'bg-blue-600 text-white' 
+                        : 'text-gray-300 hover:bg-hpu-700 hover:text-white'
+                    }`}
+                  >
+                    <Activity size={16} /> Pacientes
+                  </button>
+
+                  <button 
+                    onClick={() => {
+                      handleNewPatient();
+                      setIsMobileMenuOpen(false);
+                    }}
+                    className={`w-full text-left px-3 py-2 rounded-md text-sm font-medium flex items-center gap-2 ${
+                      currentView === 'FORM' && !selectedPatient 
+                        ? 'bg-blue-600 text-white' 
+                        : 'text-gray-300 hover:bg-hpu-700 hover:text-white'
+                    }`}
+                  >
+                    <UserPlus size={16} /> Nuevo Ingreso
+                  </button>
+
+                  {selectedPatient && currentView === 'FORM' && (
+                    <div className="px-3 py-2 text-xs bg-emerald-950/40 text-emerald-400 border border-emerald-900 rounded-md font-semibold flex items-center gap-2 mx-1 mt-1">
+                      <Heart size={14} className="animate-pulse text-emerald-500 shrink-0" />
+                      <span className="truncate">{selectedPatient.fullName}</span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="border-t border-hpu-700 my-2"></div>
+
+                {/* User actions */}
+                <div className="px-2 space-y-1">
+                  <button 
+                    onClick={() => {
+                      openProfileModal();
+                      setIsMobileMenuOpen(false);
+                    }}
+                    className="w-full text-left px-3 py-2 rounded-md text-sm text-gray-300 hover:bg-hpu-700 hover:text-white flex items-center gap-2"
+                  >
+                    <Key size={16} className="text-blue-400" /> Credenciales
+                  </button>
+
+                  {currentUser.role === UserRole.ADMIN && (
+                    <button 
+                      onClick={() => {
+                        openAdminModal();
+                        setIsMobileMenuOpen(false);
+                      }}
+                      className="w-full text-left px-3 py-2 rounded-md text-sm text-gray-300 hover:bg-hpu-700 hover:text-white flex items-center gap-2"
+                    >
+                      <Shield size={16} className="text-yellow-500" /> Gestionar Usuarios
+                    </button>
+                  )}
+
+                  <button 
+                    onClick={() => {
+                      handleLogout();
+                      setIsMobileMenuOpen(false);
+                    }}
+                    className="w-full text-left px-3 py-2 rounded-md text-sm text-red-400 hover:bg-hpu-700 hover:text-red-300 flex items-center gap-2"
+                  >
+                    <LogOut size={16} /> Cerrar Sesión
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </nav>
 
