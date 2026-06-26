@@ -24,7 +24,7 @@ async function startServer() {
       };
 
       // Execute Netlify function handler
-      const result = await handler(event, {} as any);
+      const result: any = await handler(event, {} as any);
       
       // Set response headers returned from Netlify function
       if (result?.headers) {
