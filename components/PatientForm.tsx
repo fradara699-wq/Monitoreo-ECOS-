@@ -333,7 +333,7 @@ const PatientForm: React.FC<PatientFormProps> = ({ user, patient, onBack }) => {
     } catch (error: any) {
       setIsSubmitting(false);
       console.error(error);
-      alert('Error al guardar datos en Airtable: ' + (error.message || error));
+      alert('Error al guardar datos: ' + (error.message || error));
     }
   };
 
@@ -380,7 +380,7 @@ const PatientForm: React.FC<PatientFormProps> = ({ user, patient, onBack }) => {
     } catch (error: any) {
       setIsSubmitting(false);
       console.error(error);
-      alert('Error al agregar monitoreo en Airtable: ' + (error.message || error));
+      alert('Error al agregar monitoreo: ' + (error.message || error));
     }
   };
 
@@ -417,7 +417,7 @@ const PatientForm: React.FC<PatientFormProps> = ({ user, patient, onBack }) => {
     } catch (error: any) {
       setIsSubmitting(false);
       console.error(error);
-      alert('Error al agregar balance en Airtable: ' + (error.message || error));
+      alert('Error al agregar balance: ' + (error.message || error));
     }
   };
 

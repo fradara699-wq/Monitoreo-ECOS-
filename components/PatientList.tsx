@@ -29,7 +29,7 @@ const PatientList: React.FC<PatientListProps> = ({ user, onSelectPatient, onNewP
       setPatients(data);
     } catch (err: any) {
       console.error(err);
-      setError(err.message || 'Error al conectar con Airtable');
+      setError(err.message || 'Error al conectar con la base de datos');
     } finally {
       setLoading(false);
     }
@@ -57,7 +57,7 @@ const PatientList: React.FC<PatientListProps> = ({ user, onSelectPatient, onNewP
 
       {loading && (
         <div className="text-center text-blue-300 py-6 animate-pulse">
-          Cargando registros desde Airtable...
+          Cargando registros...
         </div>
       )}
       <div className="flex flex-col md:flex-row justify-between items-center gap-4">
